@@ -19,7 +19,6 @@ COPY src/ src/
 
 # Install dependencies and the package
 RUN uv sync --frozen --no-dev
-RUN uv pip install -e .
 
 # Install Playwright browsers
 RUN uv run playwright install chromium --with-deps
