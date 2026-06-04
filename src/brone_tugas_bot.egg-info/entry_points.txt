@@ -1,0 +1,2 @@
+[console_scripts]
+brone-tugas = brone_tugas_bot.cli:app

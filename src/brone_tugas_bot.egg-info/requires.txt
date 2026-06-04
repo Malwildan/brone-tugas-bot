@@ -1,0 +1,7 @@
+dateparser>=1.2.0
+httpx2[brotli,http2,zstd]>=2.3.0
+playwright>=1.52.0
+pydantic>=2.11.0
+pydantic-settings>=2.9.0
+rich>=14.0.0
+typer>=0.16.0

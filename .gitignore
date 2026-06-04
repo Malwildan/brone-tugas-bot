@@ -1,0 +1,6 @@
+.env
+.brone-browser-state/
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
