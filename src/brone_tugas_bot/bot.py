@@ -1,8 +1,9 @@
+from typing import Final
 import asyncio
 import signal
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx2
@@ -20,6 +21,28 @@ from brone_tugas_bot.telegram import (
 
 class BotError(RuntimeError):
     pass
+
+
+WIB: Final = ZoneInfo("Asia/Jakarta")
+BRONE_OFFLINE_START_HOUR: Final = 0
+BRONE_OFFLINE_END_HOUR: Final = 7
+
+def _is_brone_offline(now: datetime) -> bool:
+    return BRONE_OFFLINE_START_HOUR <= now.hour < BRONE_OFFLINE_END_HOUR
+
+def _next_online_at(now: datetime) -> datetime:
+    target_day = now.date() if now.hour < BRONE_OFFLINE_END_HOUR else now.date() + timedelta(days=1)
+    return datetime.combine(target_day, time(BRONE_OFFLINE_END_HOUR), tzinfo=WIB)
+
+async def _wait_until_online(shutdown_event: asyncio.Event) -> None:
+    while not shutdown_event.is_set():
+        now = datetime.now(WIB)
+        if not _is_brone_offline(now):
+            return
+        wake_at = _next_online_at(now)
+        sleep_for = max(60.0, (wake_at - now).total_seconds())
+        print(f"[brone] offline until {wake_at.isoformat()}; sleeping {int(sleep_for)}s.", flush=True)
+        await asyncio.sleep(sleep_for)
 
 
 def run_bot(
@@ -91,6 +114,7 @@ async def _run_async(
     browser_context = None
     page = None
 
+    await _wait_until_online(shutdown_event)
     async with async_playwright() as playwright:
         browser_context = await playwright.chromium.launch_persistent_context(
             user_data_dir=str(settings.browser_state_dir),
@@ -180,11 +204,10 @@ async def _handle_message(
         return
 
     if command == "/tugas":
-        now_jakarta = datetime.now(ZoneInfo("Asia/Jakarta"))
-        if now_jakarta.hour >= 23 or now_jakarta.hour < 7:
+        if _is_brone_offline(datetime.now(WIB)):
+            wake_at = _next_online_at(datetime.now(WIB))
             await _send_telegram_async(
-                "BRONE is currently offline (23:00-07:00 WIB). "
-                "Please try again after 07:00.",
+                f"BRONE is offline until {wake_at.strftime('%H:%M WIB')}.",
                 config,
             )
             return
