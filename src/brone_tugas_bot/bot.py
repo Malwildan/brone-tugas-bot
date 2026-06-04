@@ -2,8 +2,7 @@ from typing import Final
 import asyncio
 import signal
 import sys
-import time
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx2
