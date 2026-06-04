@@ -156,6 +156,7 @@ async def _handle_message(
     settings: Settings,
     *,
     manual_login: bool,
+    headless: bool,
 ) -> None:
     command = text.split()[0].lower()
 
@@ -179,6 +180,14 @@ async def _handle_message(
         return
 
     if command == "/tugas":
+        now_jakarta = datetime.now(ZoneInfo("Asia/Jakarta"))
+        if now_jakarta.hour >= 23 or now_jakarta.hour < 7:
+            await _send_telegram_async(
+                "BRONE is currently offline (23:00-07:00 WIB). "
+                "Please try again after 07:00.",
+                config,
+            )
+            return
         try:
             # Run sync playwright code in thread pool to avoid asyncio loop conflict
             assignments = await asyncio.to_thread(
@@ -187,7 +196,7 @@ async def _handle_message(
                 now=datetime.now(ZoneInfo("Asia/Jakarta")),
                 lookahead_days=60,
                 manual_login=manual_login,
-                headless=False,
+                headless=headless,
             )
             await _send_telegram_async(format_assignments_message(assignments), config)
         except LoginFailedError as error:

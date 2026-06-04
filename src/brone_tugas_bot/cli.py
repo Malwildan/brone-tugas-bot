@@ -68,7 +68,7 @@ def bot(
         help="Let you log in manually in the browser.",
     ),
     headless: bool = typer.Option(
-        default=False,
+        default=True,
         help="Run Chromium without a visible window.",
     ),
 ) -> None:
