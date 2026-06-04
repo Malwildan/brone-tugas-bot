@@ -14,14 +14,17 @@ RUN pip install uv
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install the package in editable mode with all dependencies
+# Copy source code first (needed for package installation)
+COPY src/ src/
+
+# Install dependencies and the package
 RUN uv sync --frozen --no-dev
+RUN uv pip install -e . --frozen
 
 # Install Playwright browsers
 RUN uv run playwright install chromium --with-deps
 
-# Copy source code
-COPY src/ src/
+# Copy .env.example as default .env
 COPY .env.example .env
 
 # Ensure venv bin is in PATH
