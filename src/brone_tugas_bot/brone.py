@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 
 from playwright.sync_api import Locator, Page, sync_playwright
 
+from brone_tugas_bot.brone_auth import LoginFailedError, handle_saml_redirect
 from brone_tugas_bot.models import Assignment
 from brone_tugas_bot.parser import Candidate, parse_assignments
 from brone_tugas_bot.settings import Settings
@@ -32,10 +33,6 @@ STATUS_LABELS: Final = (
 OPENED_RE: Final = re.compile(r"Opened:\s*(?P<value>.+?)(?:\n|Due:)", re.IGNORECASE | re.DOTALL)
 
 
-class LoginFailedError(RuntimeError):
-    pass
-
-
 def discover_assignments(
     settings: Settings,
     *,
@@ -54,26 +51,28 @@ def discover_assignments(
             user_data_dir=str(settings.browser_state_dir),
             headless=headless,
         )
-        page = context.pages[0] if context.pages else context.new_page()
-        page.goto(settings.brone_url, wait_until="domcontentloaded")
-        _complete_login(page, settings=settings, manual_login=manual_login)
-        candidates = _collect_candidates_from_calendar(
-            page, settings.brone_url, debug_dump_dir=debug_dump_dir, counts=selector_counts
-        )
-        if not _has_assignment_url(candidates):
-            print(
-                "[brone] calendar yielded no assign candidates; falling back to dashboard.",
-                flush=True,
-            )
-            dashboard_candidates = _collect_candidates_from_dashboard(
+        try:
+            page = context.pages[0] if context.pages else context.new_page()
+            page.goto(settings.brone_url, wait_until="domcontentloaded")
+            _complete_login(page, settings=settings, manual_login=manual_login)
+            candidates = _collect_candidates_from_calendar(
                 page, settings.brone_url, debug_dump_dir=debug_dump_dir, counts=selector_counts
             )
-            candidates.extend(dashboard_candidates)
-        assignments = parse_assignments(candidates, now=now, lookahead_days=lookahead_days)
-        detailed_assignments = [
-            _with_assignment_detail(page, assignment) for assignment in assignments
-        ]
-        context.close()
+            if not _has_assignment_url(candidates):
+                print(
+                    "[brone] calendar yielded no assign candidates; falling back to dashboard.",
+                    flush=True,
+                )
+                dashboard_candidates = _collect_candidates_from_dashboard(
+                    page, settings.brone_url, debug_dump_dir=debug_dump_dir, counts=selector_counts
+                )
+                candidates.extend(dashboard_candidates)
+            assignments = parse_assignments(candidates, now=now, lookahead_days=lookahead_days)
+            detailed_assignments = [
+                _with_assignment_detail(page, assignment) for assignment in assignments
+            ]
+        finally:
+            context.close()
 
     if selector_counts:
         summary = ", ".join(f"{sel}={n}" for sel, n in selector_counts.items())
@@ -82,7 +81,7 @@ def discover_assignments(
 
 
 def _complete_login(page: Page, *, settings: Settings, manual_login: bool) -> None:
-    if _handle_saml_redirect(page, wait_for_brone=True):
+    if handle_saml_redirect(page, wait_for_brone=True):
         pass
     if page.locator("#username").count() > 0:
         if manual_login:
@@ -92,38 +91,10 @@ def _complete_login(page: Page, *, settings: Settings, manual_login: bool) -> No
         page.locator("#password").fill(settings.brone_password)
         page.locator("#kc-login").click()
         page.wait_for_load_state("domcontentloaded")
-        _handle_saml_redirect(page, wait_for_brone=True)
+        handle_saml_redirect(page, wait_for_brone=True)
         if page.locator("#username").count() > 0:
             msg = "Login still shows UB Auth. Use --manual-login or check credentials."
             raise LoginFailedError(msg)
-
-
-def _handle_saml_redirect(page: Page, *, wait_for_brone: bool = False) -> bool:
-    if "iam.ub.ac.id" not in page.url:
-        return False
-    print(f"[brone] caught SAML redirect; dumping page for debug", flush=True)
-    try:
-        body_text = page.locator("body").inner_text(timeout=5_000)
-        print(f"[brone] SAML page body preview: {body_text[:300]}", flush=True)
-    except Exception:
-        pass
-    try:
-        page.locator("form").first.locator("input[type='submit'], button[type='submit'], button").first.click(timeout=3_000)
-        print("[brone] clicked SAML form submit", flush=True)
-    except Exception:
-        try:
-            page.keyboard.press("Enter")
-            print("[brone] pressed Enter on SAML form", flush=True)
-        except Exception as error:
-            print(f"[brone] SAML form submit failed: {error}", flush=True)
-    if wait_for_brone:
-        try:
-            page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=15_000)
-        except Exception:
-            print("[brone] SAML didn't resolve — forcing brone.ub.ac.id navigation", flush=True)
-            page.goto("https://brone.ub.ac.id/my/", wait_until="domcontentloaded")
-            page.wait_for_timeout(3_000)
-    return True
 
 
 def _clear_iam_cookies(page: Page) -> None:
@@ -146,7 +117,7 @@ def _visit_upcoming_calendar(page: Page, home_url: str) -> None:
 
 
 def _wait_for_dashboard(page: Page, *, debug_dump_dir: Path | None) -> None:
-    _handle_saml_redirect(page, wait_for_brone=True)
+    handle_saml_redirect(page, wait_for_brone=True)
     try:
         page.locator(
             "[data-region='event-item'], [data-region='event-list-content'] .event, "
@@ -162,7 +133,7 @@ def _wait_for_dashboard(page: Page, *, debug_dump_dir: Path | None) -> None:
 
 
 def _wait_for_calendar(page: Page, *, debug_dump_dir: Path | None) -> None:
-    _handle_saml_redirect(page, wait_for_brone=True)
+    handle_saml_redirect(page, wait_for_brone=True)
     try:
         page.locator(
             "[data-region='event-item'], [data-region='event-list-content'] .event, "
