@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import typer
@@ -8,7 +9,7 @@ from rich.table import Table
 from brone_tugas_bot.bot import BotError, run_bot
 from brone_tugas_bot.brone import LoginFailedError, discover_assignments
 from brone_tugas_bot.models import Assignment
-from brone_tugas_bot.settings import Settings
+from brone_tugas_bot.settings import ROOT_DIR, Settings
 from brone_tugas_bot.telegram import (
     TelegramConfig,
     TelegramConfigError,
@@ -39,6 +40,10 @@ def sync(
         default=True,
         help="Send the discovered assignments to Telegram.",
     ),
+    debug_dump_dir: Path | None = typer.Option(
+        default=None,
+        help="Write raw HTML of scraped pages to this directory for debugging.",
+    ),
 ) -> None:
     settings = Settings()
     try:
@@ -48,6 +53,7 @@ def sync(
             lookahead_days=lookahead_days,
             manual_login=manual_login,
             headless=headless,
+            debug_dump_dir=debug_dump_dir,
         )
     except LoginFailedError as error:
         console.print(f"[red]{error}[/red]")
@@ -71,12 +77,17 @@ def bot(
         default=True,
         help="Run Chromium without a visible window.",
     ),
+    debug_dump_dir: Path | None = typer.Option(
+        default=ROOT_DIR / "brone-debug",
+        help="Write raw HTML of scraped pages to this directory for debugging.",
+    ),
 ) -> None:
     try:
         run_bot(
             poll_interval=poll_interval,
             manual_login=manual_login,
             headless=headless,
+            debug_dump_dir=debug_dump_dir,
         )
     except BotError as error:
         console.print(f"[red]{error}[/red]")

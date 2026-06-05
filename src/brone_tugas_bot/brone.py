@@ -1,6 +1,7 @@
 import re
 from dataclasses import replace
 from datetime import datetime
+from pathlib import Path
 from typing import Final
 from urllib.parse import urljoin
 
@@ -42,8 +43,12 @@ def discover_assignments(
     lookahead_days: int,
     manual_login: bool,
     headless: bool,
+    debug_dump_dir: Path | None = None,
 ) -> list[Assignment]:
     settings.browser_state_dir.mkdir(parents=True, exist_ok=True)
+    if debug_dump_dir is not None:
+        debug_dump_dir.mkdir(parents=True, exist_ok=True)
+    selector_counts: dict[str, int] = {}
     with sync_playwright() as playwright:
         context = playwright.chromium.launch_persistent_context(
             user_data_dir=str(settings.browser_state_dir),
@@ -52,14 +57,27 @@ def discover_assignments(
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(settings.brone_url, wait_until="domcontentloaded")
         _complete_login(page, settings=settings, manual_login=manual_login)
-        _visit_upcoming_calendar(page, settings.brone_url)
-        candidates = _collect_candidates(page)
+        candidates = _collect_candidates_from_dashboard(
+            page, settings.brone_url, debug_dump_dir=debug_dump_dir, counts=selector_counts
+        )
+        if not _has_assignment_url(candidates):
+            print(
+                "[brone] dashboard yielded no assign candidates; falling back to calendar.",
+                flush=True,
+            )
+            calendar_candidates = _collect_candidates_from_calendar(
+                page, settings.brone_url, debug_dump_dir=debug_dump_dir, counts=selector_counts
+            )
+            candidates.extend(calendar_candidates)
         assignments = parse_assignments(candidates, now=now, lookahead_days=lookahead_days)
         detailed_assignments = [
             _with_assignment_detail(page, assignment) for assignment in assignments
         ]
         context.close()
 
+    if selector_counts:
+        summary = ", ".join(f"{sel}={n}" for sel, n in selector_counts.items())
+        print(f"[brone] selector matches: {summary}", flush=True)
     return detailed_assignments
 
 
@@ -83,16 +101,102 @@ def _visit_upcoming_calendar(page: Page, home_url: str) -> None:
     page.goto(calendar_url, wait_until="domcontentloaded")
 
 
-def _collect_candidates(page: Page) -> list[Candidate]:
+def _wait_for_dashboard(page: Page, *, debug_dump_dir: Path | None) -> None:
+    try:
+        page.locator(
+            "[data-region='event-item'], [data-region='event-list-content'] .event, "
+            "[data-region='event-list-content']"
+        ).first.wait_for(state="visible", timeout=10_000)
+    except Exception:
+        if debug_dump_dir is not None:
+            _dump_html(page, debug_dump_dir / "dashboard.html")
+        print(
+            f"[brone] dashboard did not render event items; current url={page.url}",
+            flush=True,
+        )
+
+
+def _wait_for_calendar(page: Page, *, debug_dump_dir: Path | None) -> None:
+    try:
+        page.locator(
+            "[data-region='event-item'], [data-region='event-list-content'] .event, "
+            "[data-region='event-list-content']"
+        ).first.wait_for(state="visible", timeout=10_000)
+    except Exception:
+        if debug_dump_dir is not None:
+            _dump_html(page, debug_dump_dir / "calendar.html")
+        print(
+            f"[brone] calendar did not render event items; current url={page.url}",
+            flush=True,
+        )
+
+
+def _collect_candidates_from_dashboard(
+    page: Page,
+    home_url: str,
+    *,
+    debug_dump_dir: Path | None,
+    counts: dict[str, int],
+) -> list[Candidate]:
+    page.goto(home_url, wait_until="domcontentloaded")
+    _wait_for_dashboard(page, debug_dump_dir=debug_dump_dir)
+    return _scrape_selectors(page, debug_dump_dir=debug_dump_dir, counts=counts, source="dashboard")
+
+
+def _collect_candidates_from_calendar(
+    page: Page,
+    home_url: str,
+    *,
+    debug_dump_dir: Path | None,
+    counts: dict[str, int],
+) -> list[Candidate]:
+    _visit_upcoming_calendar(page, home_url)
+    _wait_for_calendar(page, debug_dump_dir=debug_dump_dir)
+    return _scrape_selectors(page, debug_dump_dir=debug_dump_dir, counts=counts, source="calendar")
+
+
+def _scrape_selectors(
+    page: Page,
+    *,
+    debug_dump_dir: Path | None,
+    counts: dict[str, int],
+    source: str,
+) -> list[Candidate]:
     candidates: list[Candidate] = []
     for selector in CARD_SELECTORS:
-        for element in page.locator(selector).all():
-            text = element.inner_text(timeout=2_000).strip()
+        try:
+            elements = page.locator(selector).all()
+        except Exception as error:
+            print(f"[brone] selector {selector!r} failed on {source}: {error}", flush=True)
+            counts[selector] = 0
+            continue
+        counts[selector] = len(elements)
+        for element in elements:
+            try:
+                text = element.inner_text(timeout=2_000).strip()
+            except Exception:
+                continue
             if not text:
                 continue
             url = _candidate_url(element)
             candidates.append(Candidate(text=text, url=url))
+    if debug_dump_dir is not None and not candidates:
+        _dump_html(page, debug_dump_dir / f"{source}-no-candidates.html")
     return candidates
+
+
+def _dump_html(page: Page, path: Path) -> None:
+    try:
+        path.write_text(page.content(), encoding="utf-8")
+    except Exception as error:
+        print(f"[brone] failed to dump html to {path}: {error}", flush=True)
+
+
+def _has_assignment_url(candidates: list[Candidate]) -> bool:
+    return any(
+        candidate.url is not None and "/mod/assign/view.php" in candidate.url
+        for candidate in candidates
+    )
 
 
 def _candidate_url(element: Locator) -> str | None:

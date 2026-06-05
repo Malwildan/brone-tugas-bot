@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Final
 import asyncio
 import signal
@@ -49,6 +50,7 @@ def run_bot(
     poll_interval: int = 5,
     manual_login: bool = False,
     headless: bool = False,
+    debug_dump_dir: Path | None = None,
 ) -> None:
     settings = Settings()
     try:
@@ -83,6 +85,7 @@ def run_bot(
                 settings=settings,
                 manual_login=manual_login,
                 headless=headless,
+                debug_dump_dir=debug_dump_dir,
             )
         )
     finally:
@@ -99,6 +102,7 @@ async def _run_async(
     settings: Settings,
     manual_login: bool,
     headless: bool,
+    debug_dump_dir: Path | None,
 ) -> None:
     shutdown_event = asyncio.Event()
 
@@ -158,6 +162,7 @@ async def _run_async(
                     settings,
                     manual_login=manual_login,
                     headless=headless,
+                    debug_dump_dir=debug_dump_dir,
                 )
 
     if browser_context is not None:
@@ -187,6 +192,7 @@ async def _handle_message(
     *,
     manual_login: bool,
     headless: bool,
+    debug_dump_dir: Path | None,
 ) -> None:
     command = text.split()[0].lower()
 
@@ -226,6 +232,7 @@ async def _handle_message(
                 lookahead_days=60,
                 manual_login=manual_login,
                 headless=headless,
+                debug_dump_dir=debug_dump_dir,
             )
             await _send_telegram_async(format_assignments_message(assignments), config)
         except LoginFailedError as error:
