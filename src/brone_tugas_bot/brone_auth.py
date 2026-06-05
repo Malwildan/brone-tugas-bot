@@ -51,6 +51,12 @@ def handle_saml_redirect(page: PageLike, *, wait_for_brone: bool = False) -> boo
     print("[brone] caught SAML redirect; inspecting page", flush=True)  # noqa: T201
     body_text = _body_text(page)
     print(f"[brone] SAML page body preview: {body_text[:300]}", flush=True)  # noqa: T201
+    if not body_text.strip():
+        msg = (
+            "UB IAM SAML page had no readable body. Stopped before submitting or "
+            "pressing Enter to protect the account."
+        )
+        raise LoginFailedError(msg)
     if is_iam_block_page(body_text):
         msg = (
             "UB IAM returned a security block page. Stopped without retrying to protect "

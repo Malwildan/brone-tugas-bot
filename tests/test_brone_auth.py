@@ -70,3 +70,17 @@ def test_handle_saml_redirect_when_iam_blocks_account_stops_without_submit() -> 
     assert page.form_clicks == 0
     assert page.keyboard.presses == []
     assert page.waited_for_brone is False
+
+
+def test_handle_saml_redirect_when_iam_body_is_empty_stops_without_submit() -> None:
+    # Given
+    page = FakePage("")
+
+    # When
+    with pytest.raises(LoginFailedError, match="no readable body"):
+        handle_saml_redirect(page, wait_for_brone=True)
+
+    # Then
+    assert page.form_clicks == 0
+    assert page.keyboard.presses == []
+    assert page.waited_for_brone is False
