@@ -95,7 +95,27 @@ def test_handle_saml_redirect_when_iam_body_is_empty_stops_without_submit() -> N
     page = FakePage("")
 
     # When
-    with pytest.raises(LoginFailedError, match="no readable body"):
+    with pytest.raises(LoginFailedError, match="Cloudflare"):
+        handle_saml_redirect(page, wait_for_brone=True)
+
+    # Then
+    assert page.form_clicks == 0
+    assert page.keyboard.presses == []
+    assert page.waited_for_brone is False
+
+
+def test_handle_saml_redirect_when_cloudflare_challenge_stops_without_submit() -> None:
+    # Given
+    page = FakePage(
+        "iam.ub.ac.id\n"
+        "Performing security verification\n"
+        "This website uses a security service to protect against malicious bots.\n"
+        "Ray ID: a06d536a4a3098ce\n"
+        "Performance and Security by Cloudflare"
+    )
+
+    # When
+    with pytest.raises(LoginFailedError, match="Cloudflare security verification"):
         handle_saml_redirect(page, wait_for_brone=True)
 
     # Then
