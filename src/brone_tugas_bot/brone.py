@@ -82,11 +82,8 @@ def discover_assignments(
 
 
 def _complete_login(page: Page, *, settings: Settings, manual_login: bool) -> None:
+    _handle_saml_redirect(page, wait_for_brone=True)
     if page.locator("#username").count() == 0:
-        try:
-            page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=30_000)
-        except Exception:
-            pass
         return
     if manual_login:
         page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=300_000)
@@ -95,10 +92,37 @@ def _complete_login(page: Page, *, settings: Settings, manual_login: bool) -> No
     page.locator("#password").fill(settings.brone_password)
     page.locator("#kc-login").click()
     page.wait_for_load_state("domcontentloaded")
-    page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=30_000)
+    _handle_saml_redirect(page, wait_for_brone=True)
     if page.locator("#username").count() > 0:
         msg = "Login still shows UB Auth. Use --manual-login or check credentials."
         raise LoginFailedError(msg)
+
+
+def _handle_saml_redirect(page: Page, *, wait_for_brone: bool = False) -> bool:
+    if "iam.ub.ac.id" not in page.url:
+        return False
+    print(f"[brone] caught SAML redirect; current url={page.url[:80]}...", flush=True)
+    try:
+        form = page.locator("form").first
+        if form.count() > 0:
+            submit = form.locator("input[type='submit'], button[type='submit'], button")
+            if submit.count() > 0:
+                submit.first.click()
+                print("[brone] clicked SAML form submit", flush=True)
+            else:
+                page.evaluate("document.forms[0]?.submit()")
+                print("[brone] called form.submit() via JS", flush=True)
+        else:
+            page.evaluate("document.forms[0]?.submit()")
+            print("[brone] called form.submit() via JS (no form locator)", flush=True)
+    except Exception as error:
+        print(f"[brone] SAML form submit failed: {error}", flush=True)
+    if wait_for_brone:
+        try:
+            page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=30_000)
+        except Exception:
+            print("[brone] SAML post-submit did not reach brone.ub.ac.id", flush=True)
+    return True
 
 
 def _visit_upcoming_calendar(page: Page, home_url: str) -> None:
@@ -107,6 +131,7 @@ def _visit_upcoming_calendar(page: Page, home_url: str) -> None:
 
 
 def _wait_for_dashboard(page: Page, *, debug_dump_dir: Path | None) -> None:
+    _handle_saml_redirect(page, wait_for_brone=True)
     try:
         page.locator(
             "[data-region='event-item'], [data-region='event-list-content'] .event, "
@@ -122,6 +147,7 @@ def _wait_for_dashboard(page: Page, *, debug_dump_dir: Path | None) -> None:
 
 
 def _wait_for_calendar(page: Page, *, debug_dump_dir: Path | None) -> None:
+    _handle_saml_redirect(page, wait_for_brone=True)
     try:
         page.locator(
             "[data-region='event-item'], [data-region='event-list-content'] .event, "
