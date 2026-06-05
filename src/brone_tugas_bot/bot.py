@@ -151,7 +151,14 @@ async def _run_async(
                 chat_id = str(message.get("chat", {}).get("id", ""))
                 if chat_id != config.chat_id:
                     continue
-                await _handle_message(text, page, config, settings, manual_login=manual_login)
+                await _handle_message(
+                    text,
+                    page,
+                    config,
+                    settings,
+                    manual_login=manual_login,
+                    headless=headless,
+                )
 
     if browser_context is not None:
         await browser_context.close()
