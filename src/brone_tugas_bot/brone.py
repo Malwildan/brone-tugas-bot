@@ -57,18 +57,18 @@ def discover_assignments(
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(settings.brone_url, wait_until="domcontentloaded")
         _complete_login(page, settings=settings, manual_login=manual_login)
-        candidates = _collect_candidates_from_dashboard(
+        candidates = _collect_candidates_from_calendar(
             page, settings.brone_url, debug_dump_dir=debug_dump_dir, counts=selector_counts
         )
         if not _has_assignment_url(candidates):
             print(
-                "[brone] dashboard yielded no assign candidates; falling back to calendar.",
+                "[brone] calendar yielded no assign candidates; falling back to dashboard.",
                 flush=True,
             )
-            calendar_candidates = _collect_candidates_from_calendar(
+            dashboard_candidates = _collect_candidates_from_dashboard(
                 page, settings.brone_url, debug_dump_dir=debug_dump_dir, counts=selector_counts
             )
-            candidates.extend(calendar_candidates)
+            candidates.extend(dashboard_candidates)
         assignments = parse_assignments(candidates, now=now, lookahead_days=lookahead_days)
         detailed_assignments = [
             _with_assignment_detail(page, assignment) for assignment in assignments
@@ -83,6 +83,10 @@ def discover_assignments(
 
 def _complete_login(page: Page, *, settings: Settings, manual_login: bool) -> None:
     if page.locator("#username").count() == 0:
+        try:
+            page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=30_000)
+        except Exception:
+            pass
         return
     if manual_login:
         page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=300_000)
@@ -91,6 +95,7 @@ def _complete_login(page: Page, *, settings: Settings, manual_login: bool) -> No
     page.locator("#password").fill(settings.brone_password)
     page.locator("#kc-login").click()
     page.wait_for_load_state("domcontentloaded")
+    page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=30_000)
     if page.locator("#username").count() > 0:
         msg = "Login still shows UB Auth. Use --manual-login or check credentials."
         raise LoginFailedError(msg)
