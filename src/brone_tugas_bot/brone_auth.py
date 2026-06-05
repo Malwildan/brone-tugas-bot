@@ -30,6 +30,8 @@ class LocatorLike(Protocol):
 
     def click(self, *, timeout: int) -> None: ...
 
+    def count(self) -> int: ...
+
 
 class PageLike(Protocol):
     url: str
@@ -51,12 +53,16 @@ def handle_saml_redirect(page: PageLike, *, wait_for_brone: bool = False) -> boo
     print("[brone] caught SAML redirect; inspecting page", flush=True)  # noqa: T201
     body_text = _body_text(page)
     print(f"[brone] SAML page body preview: {body_text[:300]}", flush=True)  # noqa: T201
+    if _has_login_form(page):
+        return False
     if not body_text.strip():
         msg = (
             "UB IAM SAML page had no readable body. Stopped before submitting or "
             "pressing Enter to protect the account."
         )
         raise LoginFailedError(msg)
+    if _is_brone_page(body_text):
+        return True
     if is_iam_block_page(body_text):
         msg = (
             "UB IAM returned a security block page. Stopped without retrying to protect "
@@ -64,10 +70,32 @@ def handle_saml_redirect(page: PageLike, *, wait_for_brone: bool = False) -> boo
             "is trusted again."
         )
         raise LoginFailedError(msg)
+    if not _has_saml_relay_form(page):
+        if wait_for_brone:
+            _wait_for_brone(page)
+            return True
+        msg = "IAM page is neither a login form nor a SAML relay form. Stopped before submitting."
+        raise LoginFailedError(msg)
     _submit_saml_form(page)
     if wait_for_brone:
         _wait_for_brone(page)
     return True
+
+
+def _has_login_form(page: PageLike) -> bool:
+    return page.locator("#username").count() > 0 or page.locator("#password").count() > 0
+
+
+def _is_brone_page(body_text: str) -> bool:
+    normalized = " ".join(body_text.casefold().split())
+    return "dashboard" in normalized and "course overview" in normalized
+
+
+def _has_saml_relay_form(page: PageLike) -> bool:
+    return (
+        page.locator("form input[name='SAMLResponse'], form input[name='SAMLRequest']").count()
+        > 0
+    )
 
 
 def _body_text(page: PageLike) -> str:
@@ -84,11 +112,8 @@ def _submit_saml_form(page: PageLike) -> None:
         ).first.click(timeout=3_000)
         print("[brone] clicked SAML form submit", flush=True)  # noqa: T201
     except (PlaywrightError, PlaywrightTimeoutError):
-        try:
-            page.keyboard.press("Enter")
-            print("[brone] pressed Enter on SAML form", flush=True)  # noqa: T201
-        except (PlaywrightError, PlaywrightTimeoutError) as error:
-            print(f"[brone] SAML form submit failed: {error}", flush=True)  # noqa: T201
+        msg = "SAML relay form submit failed. Stopped before keyboard fallback."
+        raise LoginFailedError(msg) from None
 
 
 def _wait_for_brone(page: PageLike) -> None:

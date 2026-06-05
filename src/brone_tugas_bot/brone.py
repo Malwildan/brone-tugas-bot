@@ -121,7 +121,7 @@ def _wait_for_dashboard(page: Page, *, debug_dump_dir: Path | None) -> None:
     try:
         page.locator(
             "[data-region='event-item'], [data-region='event-list-content'] .event, "
-            "[data-region='event-list-content']"
+            "[data-region='event-list-content'], .event"
         ).first.wait_for(state="visible", timeout=10_000)
     except Exception:
         if debug_dump_dir is not None:
@@ -137,7 +137,7 @@ def _wait_for_calendar(page: Page, *, debug_dump_dir: Path | None) -> None:
     try:
         page.locator(
             "[data-region='event-item'], [data-region='event-list-content'] .event, "
-            "[data-region='event-list-content']"
+            "[data-region='event-list-content'], .event"
         ).first.wait_for(state="visible", timeout=10_000)
     except Exception:
         if debug_dump_dir is not None:
