@@ -238,7 +238,11 @@ async def _handle_message(
         except LoginFailedError as error:
             await _send_telegram_async(f"Login failed: {error}", config)
         except Exception as error:
-            await _send_telegram_async(f"Error fetching assignments: {error}", config)
+            await _send_telegram_async(
+                f"Error fetching assignments: {error}. "
+                "BRONE may be slow or blocking the request. Try again in a few minutes.",
+                config,
+            )
         return
 
     await _send_telegram_async(

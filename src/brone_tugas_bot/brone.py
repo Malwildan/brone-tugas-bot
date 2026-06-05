@@ -220,7 +220,10 @@ def _scrape_selectors(
                 continue
             if not text:
                 continue
-            url = _candidate_url(element)
+            try:
+                url = _candidate_url(element)
+            except Exception:
+                continue
             candidates.append(Candidate(text=text, url=url))
     if debug_dump_dir is not None and not candidates:
         _dump_html(page, debug_dump_dir / f"{source}-no-candidates.html")
@@ -254,23 +257,27 @@ def _candidate_url(element: Locator) -> str | None:
 def _with_assignment_detail(page: Page, assignment: Assignment) -> Assignment:
     if assignment.url is None or "/mod/assign/view.php" not in assignment.url:
         return assignment
-    page.goto(assignment.url, wait_until="domcontentloaded")
-    detail_text = page.locator("body").inner_text(timeout=10_000)
-    title = _first_text(page, "h1") or assignment.title
-    course = _course_name(page) or assignment.course
-    description = _first_text(page, ".activity-description") or assignment.description
-    opened = _opened_text(detail_text)
-    status_values = _status_values(detail_text)
-    return replace(
-        assignment,
-        title=title,
-        course=course,
-        opened=opened,
-        description=description,
-        submission_status=status_values.get("Submission status"),
-        grading_status=status_values.get("Grading status"),
-        time_remaining=status_values.get("Time remaining"),
-    )
+    try:
+        page.goto(assignment.url, wait_until="domcontentloaded")
+        detail_text = page.locator("body").inner_text(timeout=10_000)
+        title = _first_text(page, "h1") or assignment.title
+        course = _course_name(page) or assignment.course
+        description = _first_text(page, ".activity-description") or assignment.description
+        opened = _opened_text(detail_text)
+        status_values = _status_values(detail_text)
+        return replace(
+            assignment,
+            title=title,
+            course=course,
+            opened=opened,
+            description=description,
+            submission_status=status_values.get("Submission status"),
+            grading_status=status_values.get("Grading status"),
+            time_remaining=status_values.get("Time remaining"),
+        )
+    except Exception as error:
+        print(f"[brone] failed to fetch detail for {assignment.url}: {error}", flush=True)
+        return assignment
 
 
 def _first_text(page: Page, selector: str) -> str | None:
