@@ -82,47 +82,62 @@ def discover_assignments(
 
 
 def _complete_login(page: Page, *, settings: Settings, manual_login: bool) -> None:
-    _handle_saml_redirect(page, wait_for_brone=True)
-    if page.locator("#username").count() == 0:
-        return
-    if manual_login:
-        page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=300_000)
-        return
-    page.locator("#username").fill(settings.brone_username)
-    page.locator("#password").fill(settings.brone_password)
-    page.locator("#kc-login").click()
-    page.wait_for_load_state("domcontentloaded")
-    _handle_saml_redirect(page, wait_for_brone=True)
+    if _handle_saml_redirect(page, wait_for_brone=True):
+        pass
     if page.locator("#username").count() > 0:
-        msg = "Login still shows UB Auth. Use --manual-login or check credentials."
-        raise LoginFailedError(msg)
+        if manual_login:
+            page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=300_000)
+            return
+        page.locator("#username").fill(settings.brone_username)
+        page.locator("#password").fill(settings.brone_password)
+        page.locator("#kc-login").click()
+        page.wait_for_load_state("domcontentloaded")
+        _handle_saml_redirect(page, wait_for_brone=True)
+        if page.locator("#username").count() > 0:
+            msg = "Login still shows UB Auth. Use --manual-login or check credentials."
+            raise LoginFailedError(msg)
 
 
 def _handle_saml_redirect(page: Page, *, wait_for_brone: bool = False) -> bool:
     if "iam.ub.ac.id" not in page.url:
         return False
-    print(f"[brone] caught SAML redirect; current url={page.url[:80]}...", flush=True)
+    print(f"[brone] caught SAML redirect; dumping page for debug", flush=True)
     try:
-        form = page.locator("form").first
-        if form.count() > 0:
-            submit = form.locator("input[type='submit'], button[type='submit'], button")
-            if submit.count() > 0:
-                submit.first.click()
-                print("[brone] clicked SAML form submit", flush=True)
-            else:
-                page.evaluate("document.forms[0]?.submit()")
-                print("[brone] called form.submit() via JS", flush=True)
-        else:
-            page.evaluate("document.forms[0]?.submit()")
-            print("[brone] called form.submit() via JS (no form locator)", flush=True)
-    except Exception as error:
-        print(f"[brone] SAML form submit failed: {error}", flush=True)
+        body_text = page.locator("body").inner_text(timeout=5_000)
+        print(f"[brone] SAML page body preview: {body_text[:300]}", flush=True)
+    except Exception:
+        pass
+    try:
+        page.locator("form").first.locator("input[type='submit'], button[type='submit'], button").first.click(timeout=3_000)
+        print("[brone] clicked SAML form submit", flush=True)
+    except Exception:
+        try:
+            page.keyboard.press("Enter")
+            print("[brone] pressed Enter on SAML form", flush=True)
+        except Exception as error:
+            print(f"[brone] SAML form submit failed: {error}", flush=True)
     if wait_for_brone:
         try:
-            page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=30_000)
+            page.wait_for_url(lambda url: "brone.ub.ac.id" in url, timeout=15_000)
         except Exception:
-            print("[brone] SAML post-submit did not reach brone.ub.ac.id", flush=True)
+            print("[brone] SAML didn't resolve — forcing brone.ub.ac.id navigation", flush=True)
+            page.goto("https://brone.ub.ac.id/my/", wait_until="domcontentloaded")
+            page.wait_for_timeout(3_000)
     return True
+
+
+def _clear_iam_cookies(page: Page) -> None:
+    try:
+        cookies = page.context.cookies()
+        cleared = 0
+        for cookie in cookies:
+            domain = cookie.get("domain", "")
+            if "iam.ub.ac.id" in domain or "keycloak" in domain.lower():
+                page.context.clear_cookies(name=cookie.get("name"))
+                cleared += 1
+        print(f"[brone] cleared {cleared} IAM/Keycloak cookies", flush=True)
+    except Exception as error:
+        print(f"[brone] failed to clear IAM cookies: {error}", flush=True)
 
 
 def _visit_upcoming_calendar(page: Page, home_url: str) -> None:
