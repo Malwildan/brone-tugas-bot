@@ -7,6 +7,12 @@ from rich.console import Console
 from rich.table import Table
 
 from brone_tugas_bot.bot import BotError, run_bot
+from brone_tugas_bot.browser_state import (
+    BrowserStateError,
+    export_browser_profile_archive,
+    export_storage_state,
+    storage_state_to_base64,
+)
 from brone_tugas_bot.brone import LoginFailedError, discover_assignments
 from brone_tugas_bot.models import Assignment
 from brone_tugas_bot.settings import ROOT_DIR, Settings
@@ -92,6 +98,57 @@ def bot(
     except BotError as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1) from error
+
+
+@app.command("export-state")
+def export_state(
+    output: Path = typer.Option(
+        default=ROOT_DIR / "brone-storage-state.json",
+        help="Write Playwright storage_state JSON from the local browser profile.",
+    ),
+    headless: bool = typer.Option(
+        default=True,
+        help="Run Chromium without a visible window.",
+    ),
+    print_base64: bool = typer.Option(
+        default=False,
+        help="Print base64 for BRONE_STORAGE_STATE_B64.",
+    ),
+    base64_output: Path | None = typer.Option(
+        default=None,
+        help="Write base64 for BRONE_STORAGE_STATE_B64 to this file.",
+    ),
+) -> None:
+    settings = Settings()
+    try:
+        export_storage_state(settings, output, headless=headless)
+        console.print(f"[green]Storage state exported to {output}[/green]")
+        encoded = storage_state_to_base64(output)
+        if base64_output is not None:
+            base64_output.parent.mkdir(parents=True, exist_ok=True)
+            base64_output.write_text(encoded, encoding="utf-8")
+            console.print(f"[green]Base64 Railway secret written to {base64_output}[/green]")
+        if print_base64:
+            console.print(encoded)
+    except BrowserStateError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+
+
+@app.command("export-profile")
+def export_profile(
+    output: Path = typer.Option(
+        default=ROOT_DIR / "brone-browser-state.tar.gz",
+        help="Write a compressed local Chromium profile archive for Railway restore.",
+    ),
+) -> None:
+    settings = Settings()
+    try:
+        export_browser_profile_archive(settings, output)
+    except BrowserStateError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1) from error
+    console.print(f"[green]Browser profile archive exported to {output}[/green]")
 
 
 def _send_telegram(assignments: list[Assignment], settings: Settings) -> None:

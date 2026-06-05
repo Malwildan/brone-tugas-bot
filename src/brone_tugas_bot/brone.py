@@ -5,8 +5,12 @@ from pathlib import Path
 from typing import Final
 from urllib.parse import urljoin
 
-from playwright.sync_api import Locator, Page, sync_playwright
+from playwright.sync_api import Browser, BrowserContext, Locator, Page, Playwright, sync_playwright
 
+from brone_tugas_bot.browser_state import (
+    restore_browser_profile_archive,
+    restore_storage_state_from_env,
+)
 from brone_tugas_bot.brone_auth import LoginFailedError, handle_saml_redirect
 from brone_tugas_bot.models import Assignment
 from brone_tugas_bot.parser import Candidate, parse_assignments
@@ -47,10 +51,8 @@ def discover_assignments(
         debug_dump_dir.mkdir(parents=True, exist_ok=True)
     selector_counts: dict[str, int] = {}
     with sync_playwright() as playwright:
-        context = playwright.chromium.launch_persistent_context(
-            user_data_dir=str(settings.browser_state_dir),
-            headless=headless,
-        )
+        browser: Browser | None = None
+        context, browser = _new_browser_context(playwright, settings=settings, headless=headless)
         try:
             page = context.pages[0] if context.pages else context.new_page()
             page.goto(settings.brone_url, wait_until="domcontentloaded")
@@ -73,11 +75,34 @@ def discover_assignments(
             ]
         finally:
             context.close()
+            if browser is not None:
+                browser.close()
 
     if selector_counts:
         summary = ", ".join(f"{sel}={n}" for sel, n in selector_counts.items())
         print(f"[brone] selector matches: {summary}", flush=True)
     return detailed_assignments
+
+
+def _new_browser_context(
+    playwright: Playwright, *, settings: Settings, headless: bool
+) -> tuple[BrowserContext, Browser | None]:
+    if restore_browser_profile_archive(settings):
+        context = playwright.chromium.launch_persistent_context(
+            user_data_dir=str(settings.browser_state_dir),
+            headless=headless,
+        )
+        return context, None
+    storage_state_path = restore_storage_state_from_env(settings)
+    if storage_state_path is None:
+        context = playwright.chromium.launch_persistent_context(
+            user_data_dir=str(settings.browser_state_dir),
+            headless=headless,
+        )
+        return context, None
+    browser = playwright.chromium.launch(headless=headless)
+    context = browser.new_context(storage_state=str(storage_state_path))
+    return context, browser
 
 
 def _complete_login(page: Page, *, settings: Settings, manual_login: bool) -> None:

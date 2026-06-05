@@ -14,5 +14,8 @@ class Settings(BaseSettings):
     brone_password: str = "BRONE_PASSWORD_PLACEHOLDER"
     brone_url: str = "https://brone.ub.ac.id/my/"
     browser_state_dir: Path = Field(default=ROOT_DIR / ".brone-browser-state")
+    brone_storage_state_b64: str = ""
+    brone_browser_state_archive_url: str = ""
+    brone_browser_state_archive_path: Path | None = None
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

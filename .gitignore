@@ -1,5 +1,9 @@
 .env
 .brone-browser-state/
+.brone-storage-state.json
+brone-storage-state.json
+brone-storage-state.b64
+brone-browser-state.tar.gz
 .pytest_cache/
 .ruff_cache/
 .venv/
